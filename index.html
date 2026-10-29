@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Habib Kailla Patha Gavi 3D</title>
+
+<style>
+*{box-sizing:border-box}
+html,body,#game{
+  margin:0;width:100%;height:100%;overflow:hidden;
+  background:#10141c;font-family:Arial,sans-serif;
+  color:white;touch-action:none
+}
+#game{position:fixed;inset:0}
+canvas{display:block}
+#hud{
+  position:fixed;top:8px;left:8px;right:8px;
+  display:flex;justify-content:space-between;gap:6px;
+  pointer-events:none;z-index:2
+}
+.panel{
+  background:#101722e8;border:1px solid #ffffff35;
+  border-radius:10px;padding:8px;font-size:12px;min-width:80px
+}
+.bar{height:7px;background:#444;border-radius:8px;overflow:hidden;margin-top:5px}
+.fill{height:100%;width:100%;background:#eee}
+#enemyFill{background:#ff514b}
+#message{
+  position:fixed;top:38%;width:100%;text-align:center;
+  font-size:25px;font-weight:bold;text-shadow:0 3px 8px #000;
+  pointer-events:none;padding:0 8px;z-index:3
+}
+#controls{
+  position:fixed;bottom:12px;left:0;right:0;
+  padding:0 9px;display:flex;justify-content:space-between;
+  align-items:flex-end;gap:5px;z-index:2
+}
+.group{display:grid;gap:6px}
+.move{grid-template-columns:repeat(2,53px)}
+.fight{grid-template-columns:repeat(2,62px)}
+button{
+  border:1px solid #ffffff40;border-radius:11px;
+  background:#1a2434ef;color:white;font-weight:bold;
+  font-size:12px;touch-action:none
+}
+.ctrl{height:49px;box-shadow:0 3px 0 #0005}
+.ctrl:active{background:#eee;color:#111}
+#overlay{
+  position:fixed;inset:0;background:#06090be8;
+  display:flex;align-items:center;justify-content:center;
+  text-align:center;z-index:5
+}
+.card{
+  width:90%;max-width:350px;padding:22px;
+  border-radius:18px;background:#19212d;
+  border:1px solid #ffffff30
+}
+#start{
+  width:100%;padding:14px;background:#eee;color:#111;
+  margin-top:12px;font-size:15px
+}
+.small{font-size:12px;line-height:1.6;color:#cbd2dc}
+@media(min-width:650px){
+  .move{grid-template-columns:repeat(2,70px)}
+  .fight{grid-template-columns:repeat(2,80px)}
+  .ctrl{height:57px}
+}
+</style>
+</head>
+<body>
+
+<div id="game"></div>
+
+<div id="hud">
+  <div class="panel">
+    PLAYER
+    <div class="bar"><div id="playerFill" class="fill"></div></div>
+    <span id="playerHP">HP 100</span>
+  </div>
+  <div class="panel" style="text-align:center">
+    ROUND <b id="round">1</b><br>
+    ENEMIES <b id="remaining">1</b>
+  </div>
+  <div class="panel">
+    ENEMY
+    <div class="bar"><div id="enemyFill" class="fill"></div></div>
+    <span id="enemyHP">HP 100</span>
+  </div>
+</div>
+
+<div id="message"></div>
+
+<div id="controls">
+  <div class="group move">
+    <button class="ctrl" data-act="left">◀ LEFT</button>
+    <button class="ctrl" data-act="right">RIGHT ▶</button>
+    <button class="ctrl" data-act="forward">▲ MOVE</button>
+    <button class="ctrl" data-act="back">▼ BACK</button>
+  </div>
+  <div class="group fight">
+    <button class="ctrl" data-act="punch">👊 PUNCH</button>
+    <button class="ctrl" data-act="kick">🦵 KICK</button>
+    <button class="ctrl" data-act="block">🛡 BLOCK</button>
+    <button class="ctrl" data-act="dodge">↗ DODGE</button>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <h2>HABIB KAILLA PATHA GAVI 3D</h2>
+    <p class="small">
+      হাবিব পাঠা গাভী <br>
+      লেদা সুট কিয়া শামসুল  এবং tiktokar আঁখি আপা এর  খালি ঘরে  মজার খেলা ।
+    </p>
+    <button id="start">PLAY GAME</button>
+    <p class="small">HABIB KAILLA PATHA KING KONG GAVI</p>
+  </div>
+</div>
+
+<!-- music.mp4 ফাইলটি index.html-এর একই Website ফোল্ডারে রাখবে।
+     controls নেই, তাই কোনো মিউজিক প্লেয়ার দেখা যাবে না। -->
+<video id="bgMusic"
+       src="./music.mp4"
+       loop
+       playsinline
+       preload="auto"
+       controls="false"
+       style="display:none"></video>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script>
+(()=>{
+'use strict';
+
+const $=id=>document.getElementById(id);
+const host=$('game');
+const music=$('bgMusic');
+
+let playing=false;
+let gameOver=false;
+let transitioning=false;
+let round=1;
+let messageTime=0;
+let last=0;
+let enemies=[];
+
+/* ব্যাকগ্রাউন্ড মিউজিক: কোনো দৃশ্যমান প্লেয়ার নেই */
+music.loop=true;
+music.controls=false;
+music.volume=.7;
+music.muted=false;
+music.removeAttribute('controls');
+
+function say(text,seconds=2){
+  $('message').textContent=text;
+  messageTime=seconds;
+}
+function bn(n){
+  return String(n).replace(/[0-9]/g,d=>'০১২৩৪৫৬৭৮৯'[d]);
+}
+
+music.addEventListener('error',()=>{
+  console.log('music.mp4 চালানো যায়নি। ফাইলের নাম ও ফরম্যাট পরীক্ষা করো।');
+});
+
+if(!window.THREE){
+  say('ইন্টারনেট চালু করে গেমটি আবার খোলো।',8);
+  return;
+}
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x8d9aa7);
+scene.fog=new THREE.Fog(0x8d9aa7,45,100);
+
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,130);
+camera.position.set(0,8,15);
+
+const renderer=new THREE.WebGLRenderer({
+  antialias:false,
+  powerPreference:'high-performance'
+});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.25));
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+host.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xeaf2ff,0x45413b,2.1));
+
+const sun=new THREE.DirectionalLight(0xfff0d8,2.4);
+sun.position.set(-12,20,10);
+scene.add(sun);
+
+const mat=(color,roughness=.8)=>new THREE.MeshStandardMaterial({
+  color,roughness
+});
+
+const floorMat=mat(0x747a80);
+const railMat=mat(0x9da5ad,.45);
+const playerMat=mat(0x2364ba);
+const enemyMat=mat(0x9d3030);
+const skinMat=mat(0xf0d1b7);
+const darkMat=mat(0x242a35);
+const shoeMat=mat(0x17191d);
+const eyeMat=mat(0x222222);
+
+function addMesh(parent,geometry,material,x,y,z){
+  const o=new THREE.Mesh(geometry,material);
+  o.position.set(x,y,z);
+  parent.add(o);
+  return o;
+}
+function box(parent,w,h,d,material,x,y,z){
+  return addMesh(parent,new THREE.BoxGeometry(w,h,d),material,x,y,z);
+}
+function sphere(parent,r,material,x,y,z,sx=1,sy=1,sz=1){
+  const o=addMesh(parent,new THREE.SphereGeometry(r,12,10),material,x,y,z);
+  o.scale.set(sx,sy,sz);
+  return o;
+}
+function segment(parent,r,len,material){
+  const g=new THREE.Group();
+  parent.add(g);
+  addMesh(g,new THREE.CylinderGeometry(r*.83,r,len,10),material,0,-len/2,0);
+  sphere(g,r,material,0,-len,0);
+  return g;
+}
+
+/* এরিনা */
+const floor=addMesh(scene,new THREE.CircleGeometry(19,64),floorMat,0,-.08,0);
+floor.rotation.x=-Math.PI/2;
+
+for(let r=4;r<=18;r+=2){
+  const ring=addMesh(
+    scene,new THREE.RingGeometry(r-.025,r+.025,64),
+    mat(r%4===0?0xb4b8bb:0x51575d),0,.01,0
+  );
+  ring.rotation.x=-Math.PI/2;
+}
+
+for(let i=0;i<48;i++){
+  const a=i/48*Math.PI*2;
+  addMesh(
+    scene,new THREE.CylinderGeometry(.09,.12,1.35,8),
+    railMat,Math.cos(a)*19,.68,Math.sin(a)*19
+  );
+}
+
+for(const y of [.3,.75,1.2]){
+  const rail=addMesh(scene,new THREE.TorusGeometry(19,.055,6,80),railMat,0,y,0);
+  rail.rotation.x=Math.PI/2;
+}
+
+/* দর্শক */
+const crowd=[
+  mat(0x345b88),mat(0x9b4545),mat(0xd3a85e),
+  mat(0x497354),mat(0xd0d0d0),mat(0x654e83)
+];
+
+for(let row=0;row<4;row++){
+  const radius=20.3+row*1.1;
+  const count=48+row*8;
+
+  for(let i=0;i<count;i++){
+    const a=i/count*Math.PI*2;
+    const p=new THREE.Group();
+    p.position.set(Math.cos(a)*radius,.35+row*.35,Math.sin(a)*radius);
+    p.rotation.y=-a+Math.PI/2;
+
+    sphere(p,.12,skinMat,0,.38,0,.8,1,.8);
+    box(p,.23,.31,.15,crowd[(i+row)%crowd.length],0,.15,0);
+    box(p,.07,.23,.07,darkMat,-.065,-.12,0);
+    box(p,.07,.23,.07,darkMat,.065,-.12,0);
+    scene.add(p);
+  }
+}
+
+/* যোদ্ধা তৈরি */
+function createFighter(isPlayer){
+  const root=new THREE.Group();
+  const body=new THREE.Group();
+  root.add(body);
+  scene.add(root);
+
+  const shirt=isPlayer?playerMat:enemyMat;
+  const pants=darkMat;
+
+  sphere(body,.36,shirt,0,1.35,0,1.05,1.2,.68);
+  box(body,.56,.25,.38,pants,0,.98,0);
+
+  addMesh(body,new THREE.CylinderGeometry(.37,.32,.18,12),shirt,0,1.04,0);
+  addMesh(body,new THREE.CylinderGeometry(.105,.12,.18,10),skinMat,0,1.96,0);
+
+  sphere(body,.235,skinMat,0,2.19,0,.88,1.05,.85);
+  sphere(body,.045,eyeMat,-.09,2.23,.198,1,.8,.5);
+  sphere(body,.045,eyeMat,.09,2.23,.198,1,.8,.5);
+
+  const limbs={};
+
+  for(const side of ['L','R']){
+    const s=side==='L'?-1:1;
+
+    const shoulder=new THREE.Group();
+    shoulder.position.set(s*.43,1.64,0);
+    body.add(shoulder);
+    sphere(shoulder,.14,shirt,0,0,0);
+    segment(shoulder,.115,.32,shirt);
+
+    const elbow=new THREE.Group();
+    elbow.position.y=-.32;
+    shoulder.add(elbow);
+    sphere(elbow,.095,skinMat,0,0,0);
+    segment(elbow,.085,.32,skinMat);
+
+    limbs['shoulder'+side]=shoulder;
+    limbs['elbow'+side]=elbow;
+
+    const hip=new THREE.Group();
+    hip.position.set(s*.19,.98,0);
+    body.add(hip);
+    segment(hip,.145,.39,pants);
+
+    const knee=new THREE.Group();
+    knee.position.y=-.39;
+    hip.add(knee);
+    sphere(knee,.12,pants,0,0,0);
+
+    const shin=segment(knee,.105,.38,pants);
+    box(shin,.19,.12,.31,shoeMat,0,-.39,.09);
+
+    limbs['hip'+side]=hip;
+    limbs['knee'+side]=knee;
+  }
+
+  return {
+    root,body,limbs,isPlayer,
+    hp:100,maxHP:100,action:'idle',
+    actionTime:0,cooldown:0,dead:false,
+    blocking:false
+  };
+}
+
+const player=createFighter(true);
+player.root.position.set(0,0,5);
+player.root.rotation.y=Math.PI;
+
+function disposeFighter(f){
+  scene.remove(f.root);
+  f.root.traverse(o=>{
+    if(o.geometry)o.geometry.dispose();
+  });
+}
+
+function clamp(f){
+  const r=Math.hypot(f.root.position.x,f.root.position.z);
+  if(r>16.5){
+    f.root.position.x*=16.5/r;
+    f.root.position.z*=16.5/r;
+  }
+}
+function face(f,target){
+  f.root.rotation.y=Math.atan2(
+    target.root.position.x-f.root.position.x,
+    target.root.position.z-f.root.position.z
+  );
+}
+function nearestEnemy(){
+  let result=null,best=Infinity;
+  for(const e of enemies){
+    if(e.dead)continue;
+    const d=e.root.position.distanceTo(player.root.position);
+    if(d<best){best=d;result=e;}
+  }
+  return result;
+}
+
+function updateHUD(){
+  $('playerFill').style.width=Math.max(0,player.hp/player.maxHP*100)+'%';
+  $('playerHP').textContent='HP '+Math.ceil(player.hp);
+
+  const e=nearestEnemy();
+  if(e){
+    $('enemyFill').style.width=Math.max(0,e.hp/e.maxHP*100)+'%';
+    $('enemyHP').textContent='HP '+Math.ceil(e.hp);
+  }else{
+    $('enemyFill').style.width='0%';
+    $('enemyHP').textContent='CLEAR';
+  }
+  $('remaining').textContent=bn(enemies.filter(e=>!e.dead).length);
+}
+
+/* প্রতিটি রাউন্ডে শত্রুর সংখ্যা বাড়ে */
+function spawnRound(){
+  enemies.forEach(disposeFighter);
+  enemies=[];
+  transitioning=false;
+  gameOver=false;
+  playing=true;
+
+  player.hp=100;
+  player.blocking=false;
+  player.action='idle';
+  player.actionTime=0;
+  player.cooldown=0;
+  player.root.position.set(0,0,5);
+  player.root.rotation.y=Math.PI;
+
+  for(let i=0;i<round;i++){
+    const e=createFighter(false);
+    const a=i/round*Math.PI*2;
+    const radius=round===1?4.2:Math.min(6.5+round*.2,12);
+
+    e.root.position.set(Math.cos(a)*radius,0,Math.sin(a)*radius-1);
+    face(e,player);
+    enemies.push(e);
+  }
+
+  $('round').textContent=bn(round);
+  updateHUD();
+  say(bn(round)+'টি হাবিব কিংকং জন্ম নিয়েছে!',2.2);
+}
+
+function doAction(action){
+  if(!playing||gameOver||transitioning)return;
+
+  if(action==='block'){
+    player.blocking=true;
+    player.action='block';
+    player.actionTime=.4;
+    return;
+  }
+
+  if(action==='dodge'){
+    player.action='dodge';
+    player.actionTime=.4;
+    const a=player.root.rotation.y;
+    player.root.position.x-=Math.sin(a)*1.1;
+    player.root.position.z-=Math.cos(a)*1.1;
+    clamp(player);
+    return;
+  }
+
+  const a=player.root.rotation.y;
+
+  if(action==='left')player.root.rotation.y+=.19;
+  if(action==='right')player.root.rotation.y-=.19;
+
+  if(action==='forward'){
+    player.root.position.x+=Math.sin(a)*.7;
+    player.root.position.z+=Math.cos(a)*.7;
+  }
+  if(action==='back'){
+    player.root.position.x-=Math.sin(a)*.55;
+    player.root.position.z-=Math.cos(a)*.55;
+  }
+
+  if(['left','right','forward','back'].includes(action)){
+    clamp(player);
+    player.action='walk';
+    player.actionTime=.2;
+    return;
+  }
+
+  if(action==='punch'||action==='kick'){
+    if(player.cooldown>0)return;
+    player.cooldown=.5;
+    player.action=action;
+    player.actionTime=.42;
+
+    const e=nearestEnemy();
+    if(!e)return;
+
+    if(e.root.position.distanceTo(player.root.position)>3.2){
+      say('শত্রুর আরও কাছে যাও!',.7);
+      return;
+    }
+
+    const to=e.root.position.clone().sub(player.root.position).normalize();
+    const forward=new THREE.Vector3(Math.sin(a),0,Math.cos(a));
+
+    if(forward.dot(to)<.15){
+      say('শত্রুর দিকে ঘুরে দাঁড়াও!',.7);
+      return;
+    }
+
+    e.hp-=action==='kick'?28:20;
+    e.action='hurt';
+    e.actionTime=.28;
+
+    const away=e.root.position.clone().sub(player.root.position);
+    away.y=0;
+    if(away.lengthSq()>0)e.root.position.addScaledVector(away.normalize(),.7);
+
+    if(e.hp<=0){
+      e.hp=0;
+      e.dead=true;
+      e.action='fall';
+      e.actionTime=1;
+    }
+  }
+}
+
+/* শত্রুর AI */
+function enemyAI(e,dt){
+  if(e.dead)return;
+
+  e.cooldown=Math.max(0,e.cooldown-dt);
+  e.actionTime=Math.max(0,e.actionTime-dt);
+
+  const d=e.root.position.distanceTo(player.root.position);
+  face(e,player);
+
+  if(e.action==='hurt'&&e.actionTime>0)return;
+
+  if(d>1.65){
+    e.action='walk';
+    const dir=player.root.position.clone().sub(e.root.position);
+    dir.y=0;
+    dir.normalize();
+    e.root.position.addScaledVector(dir,dt*1.5);
+    clamp(e);
+  }else if(e.cooldown<=0){
+    e.action=Math.random()<.68?'punch':'kick';
+    e.actionTime=.48;
+    e.cooldown=1.15+Math.random()*.45;
+
+    if(!player.blocking&&player.action!=='dodge'){
+      player.hp-=e.action==='kick'?11:7;
+      if(player.hp<=0){
+        player.hp=0;
+        gameOver=true;
+        playing=false;
+        say('GAME OVER',10);
+        $('overlay').style.display='flex';
+        $('overlay').querySelector('h2').textContent='GAME OVER';
+        $('start').textContent='TRY AGAIN';
+      }
+    }
+  }else{
+    e.action='idle';
+  }
+}
+
+function animateFighter(f,t,dt){
+  const l=f.limbs;
+  const walking=f.action==='walk';
+  const phase=t*8+(f.isPlayer?0:1.4);
+  const swing=walking?Math.sin(phase)*.5:0;
+
+  let punch=0,kick=0,guard=0,fall=0;
+  if(f.action==='punch')punch=Math.sin(Math.min(1,1-f.actionTime/.42)*Math.PI);
+  if(f.action==='kick')kick=Math.sin(Math.min(1,1-f.actionTime/.42)*Math.PI);
+  if(f.action==='block')guard=1;
+  if(f.action==='fall')fall=1-Math.max(0,f.actionTime);
+
+  l.shoulderL.rotation.x=swing-guard*.7;
+  l.shoulderR.rotation.x=-swing-guard*.7;
+  l.shoulderL.rotation.z=.12+guard*.5;
+  l.shoulderR.rotation.z=-.12-guard*.5;
+  l.elbowL.rotation.x=-.2-guard*.7;
+  l.elbowR.rotation.x=-.2-guard*.7;
+
+  if(f.action==='punch'){
+    l.shoulderR.rotation.x=-1.6*punch;
+    l.elbowR.rotation.x=-.8*punch;
+  }
+  if(f.action==='kick'){
+    l.hipR.rotation.x=-1.35*kick;
+    l.kneeR.rotation.x=1.15*kick;
+  }
+
+  l.hipL.rotation.x=swing;
+  l.hipR.rotation.x=-swing;
+  l.kneeL.rotation.x=Math.max(0,-swing)*.8;
+  l.kneeR.rotation.x=Math.max(0,swing)*.8;
+
+  f.body.position.y=walking?Math.abs(Math.sin(phase*2))*.035:0;
+  f.body.rotation.z=f.action==='dodge'?.2:0;
+  f.body.rotation.x=fall*1.2;
+
+  f.actionTime=Math.max(0,f.actionTime-dt);
+  if(f.actionTime<=0&&['punch','kick','block','dodge','hurt'].includes(f.action)){
+    f.action='idle';
+    f.blocking=false;
+  }
+}
+
+function checkRoundEnd(){
+  if(!playing||gameOver||transitioning)return;
+
+  if(enemies.every(e=>e.dead)){
+    transitioning=true;
+    playing=false;
+    say(bn(round)+'টি হাবিব কিংকং পরাজয় হয়েছে!',2);
+
+    setTimeout(()=>{
+      if(!gameOver){
+        round++;
+        spawnRound();
+      }
+    },2000);
+  }
+}
+
+/* টাচ কন্ট্রোল */
+document.querySelectorAll('[data-act]').forEach(btn=>{
+  const action=btn.dataset.act;
+
+  btn.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    doAction(action);
+  });
+
+  const release=()=>{
+    if(action==='block'){
+      player.blocking=false;
+      if(player.action==='block')player.action='idle';
+    }
+  };
+
+  btn.addEventListener('pointerup',release);
+  btn.addEventListener('pointercancel',release);
+  btn.addEventListener('lostpointercapture',release);
+});
+
+/* কিবোর্ড কন্ট্রোল */
+addEventListener('keydown',e=>{
+  if(e.repeat)return;
+  const map={
+    ArrowLeft:'left',ArrowRight:'right',
+    ArrowUp:'forward',ArrowDown:'back',
+    a:'left',d:'right',w:'forward',s:'back',
+    j:'punch',k:'kick',l:'block',' ':'dodge'
+  };
+  if(map[e.key]){
+    e.preventDefault();
+    doAction(map[e.key]);
+  }
+});
+
+addEventListener('keyup',e=>{
+  if(e.key==='l'||e.key===' '){
+    player.blocking=false;
+    if(player.action==='block')player.action='idle';
+  }
+});
+
+/* PLAY GAME চাপলে গান শুরু হবে */
+$('start').addEventListener('click',async()=>{
+  $('overlay').style.display='none';
+
+  try{
+    music.controls=false;
+    music.removeAttribute('controls');
+    music.muted=false;
+    music.volume=.7;
+
+    /* একই বোতামে চাপ দেওয়ার সময় মিউজিক চালু */
+    await music.play();
+  }catch(err){
+    console.error('Music playback failed:',err);
+    say('মিউজিক চালু হয়নি। music.mp4 ফাইলটি পরীক্ষা করো।',4);
+  }
+
+  $('overlay').querySelector('h2').textContent='HABIB KAILLA PATHA GAVI 3D';
+  $('start').textContent='PLAY GAME';
+
+  round=1;
+  spawnRound();
+});
+
+/* গেম অ্যানিমেশন */
+function animate(now){
+  requestAnimationFrame(animate);
+
+  const dt=Math.min(.035,Math.max(.001,(now-last)/1000||.016));
+  last=now;
+  const t=now/1000;
+
+  if(playing){
+    player.cooldown=Math.max(0,player.cooldown-dt);
+    enemies.forEach(e=>enemyAI(e,dt));
+
+    animateFighter(player,t,dt);
+    enemies.forEach(e=>animateFighter(e,t,dt));
+
+    checkRoundEnd();
+    updateHUD();
+
+    const target=nearestEnemy();
+    const focus=player.root.position.clone();
+    if(target)focus.lerp(target.root.position,.25);
+
+    camera.position.x+=(focus.x*.38-camera.position.x)*Math.min(1,dt*2);
+    camera.position.z+=(focus.z+10-camera.position.z)*Math.min(1,dt*2);
+    camera.position.y+=(7-camera.position.y)*Math.min(1,dt*2);
+    camera.lookAt(focus.x,1,focus.z);
+  }else{
+    animateFighter(player,t,dt);
+    enemies.forEach(e=>animateFighter(e,t,dt));
+  }
+
+  if(messageTime>0){
+    messageTime-=dt;
+    if(messageTime<=0)$('message').textContent='';
+  }
+
+  renderer.render(scene,camera);
+}
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.25));
+});
+
+updateHUD();
+requestAnimationFrame(animate);
+
+})();
+</script>
+</body>
+</html>
